@@ -36,3 +36,6 @@
         - 2fps 추론 주기 제어 및 `weights.pth` 자동 로드.
         - 타겟 매칭 상태 오버레이 UI 및 우측 하단 크롭 얼굴 실시간 PiP(Picture-in-Picture) 시각화 완성.
         - v0.6.0 개발 완료
+     
+* **26-09-28**:
+   - repository name changed (agi -> model_architecture_study)
