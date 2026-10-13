@@ -1,0 +1,5 @@
+torch
+torchvision
+mediapipe==0.10.21
+opencv-python==4.11.0.86
+numpy==1.26.4

@@ -1,32 +1,38 @@
 # Algorithm Specification
 
-## 1. 모델 정의 (Model Definition)
+## 1. Program Definition
 
-본 모델은 240p ($320 \times 240$), 4:3 영상 촬영을 지원하는 웹캠의 영상 정보를 받아, 프레임 내 특정 인물이 존재하는지에 대한 확률 $y \in [0.0, 1.0]$ 을 출력하는 파이프라인 구조이다.
+본 프로그램은 240p ($320 \times 240$), 4:3 영상 촬영을 지원하는 웹캠의 영상 정보를 받아, 프레임 내 특정 인물이 존재하는지에 대한 확률 $y \in [0.0, 1.0]$ 을 출력하는 파이프라인 구조이다.
 
-### 1.1 구조 (Architecture)
+### 1.1 Architecture
 
-[영상 촬영 시작] - [stage 1: MediaPipe Face Detection] - [Crop] - [Resize] - [Transpose & Normalize] - [stage 2: CNN]
+[영상 촬영 시작] - [stage 1: MediaPipe Face Detection] - [Crop] - [Resize] - [Transpose & Normalize] - [stage 2: CNN] - [확률 $y \in [0.0, 1.0]$]
 
-### 1.2 데이터의 흐름
+### 1.2 Data Pipeline
 
 * **[영상 촬영 시작]**: 모델 추론 주파수를 2fps로 설정해 0.5초마다 원형 프레임($240 \times 320 \times 3$, uint8) 추출.
-* **[stage 1: MediaPipe Face Detection]**: 1장의 이미지인 원형 프레임 $\rightarrow$ bounding box($x_{min}, y_{min}, w, h$) 반환. `None` 또는 빈 리스트인 `[]`를 반환 시 얼굴 인식 불가능으로 간주하여 모든 단계를 건너뛰고 최종 출력인 $0.0$ (0%)을 결과로 출력.
+* **[stage 1: MediaPipe Face Detection]**: MediaPipe Face Detection을 사용하여 원형 프레임에서 얼굴을 검출.
+  - **입력 (Input)**: 원형 프레임 ($240 \times 320 \times 3$, uint8, BGR)
+  - **처리 (Processing)**: MediaPipe Face Detection 모델을 통한 얼굴 영역 검출
+  - **출력 (Output)**: bounding box ($x_{min}, y_{min}, w, h$) 또는 `None`/`[]` (얼굴 미검출 시)
 * **[Crop]**: 원형 프레임에서 bounding box 영역에 따라 절단. 절단 이미지($h_{face} \times w_{face} \times 3$, uint8) 생성.
 * **[Resize]**: 절단 이미지 $\rightarrow$ 쌍선형 보간법(Bilinear Interpolation)을 적용하여 $112 \times 112 \times 3$ 크기의 이미지 생성.
 * **[Transpose & Normalize]**: 이미지를 PyTorch 텐서 규격으로 수정 및 정규화하여 `image_pytorch_tensor` ($3 \times 112 \times 112$, float32) 생성.
   $$
   x_{norm} = \frac{x_{pixel}}{255.0}
   $$
-* **[stage 2: CNN]**: PyTorch를 사용하여 가볍고 강력하며 호환성 높은 직접 설계 CNN(SimpleCNN) 모델을 적용.
+* **[stage 2: CNN]**: PyTorch를 사용하여 가볍고 강력하며 호환성 높은 직접 설계 CNN 모델을 적용.
+  - **입력 (Input)**: `[Transpose & Normalize]` 단계에서 생성된 `image_pytorch_tensor` ($3 \times 112 \times 112$, float32)
+  - **처리 (Processing)**: 특징 추출기와 분류기로 구성된 CNN 순전파 연산
+  - **출력 (Output)**: 특정 인물일 확률 $y \in [0.0, 1.0]$ (스칼라, float32)
 
-## 2. Stage 2 CNN 설계 명세 (CNN Specification)
+## 2. Stage 2 CNN Specification
 
-본 설계는 특징 추출기(Feature Extractor)와 분류기(Classifier)가 결합된 형태의 이진 분류 CNN 구조이다.
+본 Stage 2 CNN은 특징 추출기(Feature Extractor)와 분류기(Classifier)가 결합된 형태의 이진 분류 CNN 구조이다.
 
-### 2.1 아키텍처 상세 (Architecture Details)
+### 2.1 Architecture & Inference(Forward Propagation)
 
-1. **Input**: $\mathbf{X} \in \mathbb{R}^{3 \times 112 \times 112}$ (RGB 3채널 이미지)
+1. **Input**: $\mathbf{X} \in \mathbb{R}^{3 \times 112 \times 112}$ (RGB 3채널 이미지, 자료형: float32)
 2. **Conv Layer 1**: 
    - Input Channels: $3$, Output Channels: $16$
    - Kernel Size: $3 \times 3$ (※ 공간 커널 크기는 $3 \times 3$이나, 각 필터는 3개의 입력 채널(RGB) 전체를 동시에 커버하므로 실제 필터 텐서 형태는 $16 \times 3 \times 3 \times 3$ 임)
@@ -54,11 +60,11 @@
    - Activation Function: Sigmoid
    - Output: $y \in [0.0, 1.0]$ (특정 인물일 확률)
 
-## 3. Stage 2 학습 및 역전파 알고리즘 (Stage 2 Learning & Backpropagation)
+## 3. Learning(Backpropagation)
 
 ### 3.1 오차 및 손실 함수 설정 (Loss Function & Error Metrics)
 
-본 모델은 특정 인물의 존재 여부를 판단하는 이진 분류(Binary Classification) 문제이므로, 학습과 평가를 위한 오차 및 손실 함수를 다음과 같이 설정한다.
+본 Stage 2 CNN은 특정 인물의 존재 여부를 판단하는 이진 분류(Binary Classification) 문제이므로, 학습을 위한 손실 함수를 다음과 같이 설정한다.
 
 1. **학습 손실 함수 (Primary Loss - Binary Cross Entropy, BCE)**:
    - 출력값 $y \in [0.0, 1.0]$과 정답 레이블 $t \in \{0.0, 1.0\}$ 간의 차이를 계산하여 역전파(Backpropagation)의 최적화 목표로 사용한다.
@@ -68,16 +74,9 @@
    L_{BCE} = - \frac{1}{N} \sum_{i=1}^{N} [t_i \log(y_i) + (1-t_i) \log(1-y_i)]
    $$
 
-2. **관측 및 평가 보조 지표 (Monitoring Metric - Mean Absolute Error, MAE)**:
-   - 모델이 실제로 얼마나 정확하게 확률을 예측하고 있는지 직관적으로 파악하기 위한 보조 지표로 사용한다. (역전파에는 직접 관여하지 않음)
-   
-   $$
-   L_{MAE} = \frac{1}{N} \sum_{i=1}^{N} | y_i - t_i |
-   $$
+   - **판단 기준**: 학습 과정에서 $L_{BCE} \approx 0$ 으로 수렴하면 학습이 원활하게 완료된 것으로 간주한다.
 
-   - **판단 기준**: 학습 과정에서 $L_{MAE} \approx 0$ 에 수렴하면 학습이 원활하게 완료된 것으로 간주한다.
-
-### 3.2 역전파 알고리즘 및 출력층 그레디언트 (Backpropagation & Output Layer Gradients)
+### 3.2 Backpropagation & Output Layer Gradients
 
 출력층(Fully Connected Layer + Sigmoid) 단계에서 BCE 손실 함수를 최소화하기 위해 Chain Rule을 적용하여 그레디언트를 구하고 에러를 전파한다.
 
@@ -241,11 +240,11 @@ Conv Layer 2에서 전달받은 오차 신호 $\delta^{\text{pool1}}$을 받아,
 4. **학습 파이프라인의 종결**:
    - $\mathbf{X}$는 외부 입력(웹캠 데이터)이므로 더 이상 이전 레이어로 오차를 전파하지 않고 1회 역전파(Backpropagation) 파이프라인을 종료한다.
 
-## 4. 초기화 전략 (Initialization)
+## 4. Initialization
 
 본 모델(Stage 2 CNN)의 학습 안정성과 초기 기울기 흐름을 최적화하기 위해, 각 레이어의 특성에 맞춘 가중치 및 편향 초기화 전략을 적용한다.
 
-### 4.1 가중치 초기화 (Weights Initialization)
+### 4.1 Weights Initialization
 활성화 함수의 특성과 레이어 종류에 따라 분산이 소실되거나 폭발하지 않도록 적절한 초기화 기법을 이원화하여 적용한다.
 
 1. **합성곱 층 (Conv Layers: $\mathbf{K}_1, \mathbf{K}_2$)**:
@@ -256,7 +255,7 @@ Conv Layer 2에서 전달받은 오차 신호 $\delta^{\text{pool1}}$을 받아,
    - **적용 기법**: **Xavier (Glorot) Normal Initialization**
    - **선정 이유**: 은닉층과 출력층에 **Sigmoid** 활성화 함수를 사용하므로, 입출력의 분산을 일정하게 유지하여 초기 기울기 흐름을 안정화하는 Xavier 초기화를 적용한다. (기존 v0.5.x MLP 구조와의 호환성 유지)
 
-### 4.2 편향 초기화 (Bias Initialization)
+### 4.2 Bias Initialization
 
 1. **모든 레이어의 편향 ($b_1, b_2, b_{\text{fc}}, b_{\text{out}}$)**:
    - **적용 기법**: **Zero Initialization**
@@ -299,68 +298,3 @@ Conv Layer 2에서 전달받은 오차 신호 $\delta^{\text{pool1}}$을 받아,
 
 ### 5.4 모델 가중치 저장 (Serialization)
 * 오프라인 배치 학습 완료 후 최적화된 파라미터를 PyTorch `state_dict` 규격인 `weights.pth`로 저장하여 실시간 파이프라인에서 호출할 수 있도록 한다.
-
-## 6. 구현 코드 구조 설계 (Software Architecture Specification)
-
-수학적 명세 및 알고리즘을 유지보수성 높고 확장 가능한 실제 코드로 구현하기 위해, 다음과 같이 모듈 단위의 객체지향 및 레이어드 아키텍처(Layered Architecture)를 설계한다.
-
-### 6.1 파일 및 모듈 구조 (Directory Layout)
-
-```text
-agi/
-├── algorithm_spec.md
-├── ai_rule.md
-├── readme.md
-├── data/                   # [추가] 학습용 정적 이미지 디렉터리
-│   ├── target/             # [추가] 특정 인물 사진 (Label: 1.0)
-│   └── non_target/         # [추가] 타인/비타겟 사진 (Label: 0.0)
-├── model.py
-├── face_detector.py
-├── pipeline.py
-├── trainer.py
-├── train_dataset.py        # [추가] 데이터 로드, 증강, 배치 학습 및 가중치 저장
-├── weights.pth             # [추가] 학습 완료된 모델 파라미터 파일
-└── main.py
-```
-
-### 6.2 주요 클래스 및 역할 명세 (Class Specifications)
-
-1. **`FaceDetector` (`face_detector.py`)**:
-   - **외부 모듈**: `mediapipe.solutions.face_detection` (Google MediaPipe Pre-trained BlazeFace) 및 `opencv-python` (`cv2`).
-   - **역할**: 웹캠 프레임 입력($240 \times 320 \times 3$, uint8, BGR)을 받아 얼굴을 검출하고 Stage 2 텐서 형태로 전처리한다.
-   - **주요 메서드**:
-     - `detect_and_crop(frame: np.ndarray) -> Optional[np.ndarray]`: BGR 프레임을 RGB로 변환 후 MediaPipe로 Bounding Box를 찾고 크롭. 얼굴이 없으면 `None` 반환.
-     - `preprocess(cropped_face: np.ndarray) -> torch.Tensor`: $112 \times 112$ Bilinear Resize, $[0, 1]$ 범위 정규화, Transpose ($H \times W \times C \rightarrow C \times H \times W$) 및 차원 확장 ($1 \times 3 \times 112 \times 112$, float32 PyTorch Tensor).
-
-2. **`SimpleCNN` (`model.py`)**:
-   - **기기/프레임워크**: PyTorch `nn.Module`.
-   - **역할**: Stage 2 이진 분류 네트워크 구조 정의 및 가중치 초기화.
-   - **주요 메서드**:
-     - `__init__()`: Conv1, Conv2, MaxPool, FC1, FC2 레이어 및 활성화 함수(ReLU, Sigmoid) 정의.
-     - `_init_weights()`: Conv 레이어에 He Normal, FC 레이어에 Xavier Normal, 편향에 Zero 초기화 적용.
-     - `forward(x: torch.Tensor) -> torch.Tensor`: 순전파 연산 수행 ($1 \times 3 \times 112 \times 112 \rightarrow 1 \times 1$).
-
-3. **`FaceRecognitionPipeline` (`pipeline.py`)**:
-   - **역할**: `FaceDetector`와 `SimpleCNN`을 하나의 추론 단위로 결합하고 예외 상황을 안전하게 처리.
-   - **주요 메서드**:
-     - `predict(frame: np.ndarray) -> float`:
-       1. `FaceDetector.detect_and_crop` 호출.
-       2. 반환값이 `None`일 경우, Stage 2를 실행하지 않고 즉시 확률 $0.0$ 반환.
-       3. cropped 이미지가 존재할 경우 전처리 후 `SimpleCNN.forward` 실행하여 $y \in [0.0, 1.0]$ 반환.
-
-4. **`ModelTrainer` (`trainer.py`)**:
-   - **역할**: Stage 2 CNN 모델의 역전파, 오차 지표 관측 및 파라미터 업데이트 관리.
-   - **주요 메서드**:
-     - `compute_loss_and_metrics(y_pred: torch.Tensor, target: torch.Tensor)`: Primary Loss($L_{BCE}$)와 Monitoring Metric($L_{MAE}$) 계산.
-     - `train_step(x: torch.Tensor, target: torch.Tensor) -> dict`: Gradient 초기화, Forward, Loss 계산, Backward, Optimizer Step 수행 및 loss/mae dict 반환.
-
-5. **`train_dataset.py`**:
-   - `data/` 디렉터리의 이미지를 Stage 1 전처리 및 6배 증강 후 미니배치 학습 진행, `weights.pth` 파일 생성.
-
-6. **`main.py`**:
-   - **역할**: 프로그램 진입점. OpenCV 웹캠 캡처를 2fps 주기로 구동하며 파이프라인 연동 및 결과를 화면에 시각화.
-
-### 6.3 예외 처리 및 엣지 케이스 (Edge Cases Handling)
-
-- **얼굴 미검출 (No Face Detected)**: Stage 1에서 MediaPipe가 얼굴을 감지하지 못하거나 bounding box 영역이 프레임 범위를 벗어날 경우, Stage 2 연산을 생략하고 예측 확률을 $0.0$으로 처리하여 불필요한 연산을 방지한다.
-- **입력 채널 및 정규화 오류**: OpenCV의 BGR 색상 공간을 MediaPipe 및 PyTorch 입력 기준인 RGB로 반드시 변환하고, uint8($0\sim255$)을 float32($0.0\sim1.0$)로 정확히 정규화한다.
