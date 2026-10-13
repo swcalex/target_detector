@@ -1,95 +1,100 @@
 import cv2
-import mediapipe as mp
 import numpy as np
+import mediapipe as mp
 import torch
-from typing import Optional, Tuple
+from typing import Optional
+
 
 class FaceDetector:
-    """
-    Stage 1: MediaPipe 기반 얼굴 검출 및 PyTorch 입력 규격 전처리 클래스.
-    """
+    """MediaPipe Face Detection을 이용한 얼굴 검출 및 전처리"""
+
     def __init__(self, min_detection_confidence: float = 0.5):
-        # MediaPipe Face Detection 초기화
         self.mp_face_detection = mp.solutions.face_detection
-        self.face_detection = self.mp_face_detection.FaceDetection(
+        self.detector = self.mp_face_detection.FaceDetection(
+            model_selection=0,  # 0: short-range (2m 이내)
             min_detection_confidence=min_detection_confidence
         )
 
     def detect_and_crop(self, frame: np.ndarray) -> Optional[np.ndarray]:
         """
-        웹캠 프레임(BGR)에서 얼굴을 검출하고 해당 영역을 크롭하여 반환합니다.
-        얼굴이 미검출되거나 바운딩 박스 오차가 발생할 경우 None을 반환합니다.
-
-        Args:
-            frame (np.ndarray): OpenCV 웹캠 입력 이미지 (BGR, H x W x C)
-
-        Returns:
-            Optional[np.ndarray]: 크롭된 얼굴 이미지 (BGR, H_face x W_face x C) 또는 None
+        BGR 프레임에서 얼굴을 검출하고 크롭한다.
+        얼굴이 없으면 None 반환.
         """
-        h, w, c = frame.shape
-        # 1. BGR 이미지를 RGB로 변환 (MediaPipe는 RGB 입력을 받음)
-        rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        
-        # 2. 얼굴 검출 수행
-        results = self.face_detection.process(rgb_frame)
-        
-        # 3. 검출 결과가 없으면 즉시 None 반환
+        # BGR → RGB 변환
+        rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        results = self.detector.process(rgb)
+
         if not results.detections:
             return None
 
-        # 4. 가장 신뢰도가 높은 첫 번째 얼굴의 바운딩 박스 추출
+        # 첫 번째 얼굴만 사용
         detection = results.detections[0]
         bbox = detection.location_data.relative_bounding_box
-        
-        # 5. 상대 좌표를 절대 픽셀 좌표로 변환
+
+        h, w, _ = frame.shape
         x_min = int(bbox.xmin * w)
         y_min = int(bbox.ymin * h)
-        bbox_w = int(bbox.width * w)
-        bbox_h = int(bbox.height * h)
+        width = int(bbox.width * w)
+        height = int(bbox.height * h)
 
-        # 6. 이미지 경계를 벗어나는 예외 상황 방지 (클리핑 처리)
-        x1 = max(0, x_min)
-        y1 = max(0, y_min)
-        x2 = min(w, x_min + bbox_w)
-        y2 = min(h, y_min + bbox_h)
+        # 경계 보정
+        x_min = max(0, x_min)
+        y_min = max(0, y_min)
+        width = min(w - x_min, width)
+        height = min(h - y_min, height)
 
-        # 유효한 크롭 크기인지 검증 (폭이나 높이가 0 이하이면 무효)
-        if (x2 - x1) <= 0 or (y2 - y1) <= 0:
+        if width <= 0 or height <= 0:
             return None
 
-        # 7. 원형 프레임에서 Bounding Box 영역 절단
-        cropped_face = frame[y1:y2, x1:x2]
-        return cropped_face
+        cropped = frame[y_min:y_min + height, x_min:x_min + width]
+        return cropped
 
     def preprocess(self, cropped_face: np.ndarray) -> torch.Tensor:
         """
-        크롭된 얼굴 이미지를 $112 x 112$ 크기로 리사이즈하고, 정규화 및 텐서 변환을 수행합니다.
-
-        Args:
-            cropped_face (np.ndarray): 크롭된 얼굴 이미지 (BGR, H_face x W_face x C)
-
-        Returns:
-            torch.Tensor: PyTorch 합성곱 신경망 입력 규격 텐서 (1 x C x H_target x W_target, float32)
+        크롭된 얼굴 이미지를 Stage 2 입력 텐서로 변환한다.
+        - 112x112 Bilinear Resize
+        - [0, 1] Float32 정규화
+        - Transpose (HWC → CHW)
+        - 차원 확장 (1, 3, 112, 112)
         """
-        # 1. 쌍선형 보간법(Bilinear Interpolation)을 적용하여 $112 x 112$ 크기로 리사이즈
-        resized_face = cv2.resize(cropped_face, (112, 112), interpolation=cv2.INTER_LINEAR)
-        
-        # 2. BGR에서 RGB로 다시 변환 (최종 모델 입력은 RGB 채널 순서)
-        rgb_face = cv2.cvtColor(resized_face, cv2.COLOR_BGR2RGB)
-        
-        # 3. [0, 255] 정수형 값을 [0.0, 1.0] 실수형(float32)으로 정규화
-        normalized_face = rgb_face.astype(np.float32) / 255.0
-        
-        # 4. 차원 변경: H x W x C -> C x H x W
-        tensor_face = np.transpose(normalized_face, (2, 0, 1))
-        
-        # 5. PyTorch 텐서로 변환하고, 배치 차원을 추가하여 4D 텐서화: 1 x C x H x W
-        pytorch_tensor = torch.from_numpy(tensor_face).unsqueeze(0)
-        
-        return pytorch_tensor
+        # BGR → RGB (MediaPipe는 RGB 기준)
+        rgb = cv2.cvtColor(cropped_face, cv2.COLOR_BGR2RGB)
+        # Resize
+        resized = cv2.resize(rgb, (112, 112), interpolation=cv2.INTER_LINEAR)
+        # 정규화
+        normalized = resized.astype(np.float32) / 255.0
+        # Transpose & 차원 확장
+        tensor = torch.from_numpy(normalized).permute(2, 0, 1).unsqueeze(0)  # (1,3,112,112)
+        return tensor
 
-    def close(self):
+    def detect_bbox(self, frame: np.ndarray):
+        """MediaPipe로 bounding box 검출 (시각화용).
+        반환: (x_min, y_min, width, height) 또는 None
         """
-        MediaPipe 리소스를 명시적으로 해제합니다.
-        """
-        self.face_detection.close()
+        rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        results = self.detector.process(rgb)
+
+        if not results.detections:
+            return None
+
+        detection = results.detections[0]
+        bbox = detection.location_data.relative_bounding_box
+
+        h, w, _ = frame.shape
+        x_min = max(0, int(bbox.xmin * w))
+        y_min = max(0, int(bbox.ymin * h))
+        width = min(w - x_min, int(bbox.width * w))
+        height = min(h - y_min, int(bbox.height * h))
+
+        if width <= 0 or height <= 0:
+            return None
+
+        return (x_min, y_min, width, height)
+
+    def detect_and_crop(self, frame: np.ndarray) -> Optional[np.ndarray]:
+        """bbox 검출 후 크롭. 얼굴 없으면 None."""
+        bbox = self.detect_bbox(frame)
+        if bbox is None:
+            return None
+        x_min, y_min, w, h = bbox
+        return frame[y_min:y_min + h, x_min:x_min + w]
