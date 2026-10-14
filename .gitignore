@@ -6,6 +6,5 @@ __pycache__/
 .mypy_cache/
 .ipynb_checkpoints/
 *.log
-data/
-weights.pth
+data/**
 .vscode/

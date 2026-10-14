@@ -22,6 +22,9 @@
 - **얼굴 미검출 처리**: 얼굴이 검출되지 않으면 Stage 2 연산을 생략하고 0.0% 로 처리
 - **경량 CNN**: 3→16→32 채널 구조의 소형 CNN으로 CPU 환경에서도 구동 가능
 - **데이터 증강**: 소규모 데이터셋(60장)을 6배 증강(360장)하여 과적합 방지
+- **모델 파라미터 수**: **5,023,089개 (약 5.02M)**
+  - Conv1: 448 / Conv2: 4,640 / FC1: 5,017,800 / FC2: 201
+- **지표 산출**: 학습 시 epoch당 소요 시간과 BCE 손실 곡선을 `data/log/`에 저장
 
 ### 상세 명세
 
@@ -54,6 +57,7 @@ pip install -r requirements.txt
 | `mediapipe` | Stage 1 얼굴 검출 |
 | `opencv-python` | 웹캠 캡처, 이미지 처리 |
 | `numpy` | 배열 연산 |
+| `matplotlib` | Loss 곡선 그래프 생성 |
 
 ### 2.3 학습 (weights.pth 생성)
 
@@ -64,7 +68,13 @@ pip install -r requirements.txt
 python train_dataset.py
 ```
 
-학습이 완료되면 `weights.pth` 파일이 생성됩니다.
+학습이 완료되면 다음 산출물이 생성됩니다.
+
+- `data/weights.pth` : 학습된 모델 가중치
+- `data/log/train_time_log.txt` : 10 epoch 블록별 소요 시간 및 epoch당 평균 시간
+- `data/log/loss_curve.png` : epoch별 BCE 손실 곡선
+
+학습 하이퍼파라미터(Batch=9, Epoch=50, LR=1e-3, SGD)는 `algorithm_spec.md` Section 2.2.1에 명시되어 있습니다.
 
 ### 2.4 실시간 추론
 
