@@ -4,7 +4,7 @@ from pipeline import FaceRecognitionPipeline
 
 
 def main():
-    pipeline = FaceRecognitionPipeline(weights_path="weights.pth")
+    pipeline = FaceRecognitionPipeline(weights_path="data/weights.pth")
 
     cap = cv2.VideoCapture(0)
     cap.set(cv2.CAP_PROP_FRAME_WIDTH, 320)

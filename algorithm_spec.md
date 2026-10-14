@@ -1,6 +1,6 @@
 # Algorithm Specification
 
-## 1. Program Definition
+## 1. Program Specification
 
 본 프로그램은 240p ($320 \times 240$), 4:3 영상 촬영을 지원하는 웹캠의 영상 정보를 받아, 프레임 내 특정 인물이 존재하는지에 대한 확률 $y \in [0.0, 1.0]$ 을 출력하는 파이프라인 구조이다.
 
@@ -26,9 +26,9 @@
   - **처리 (Processing)**: 특징 추출기와 분류기로 구성된 CNN 순전파 연산
   - **출력 (Output)**: 특정 인물일 확률 $y \in [0.0, 1.0]$ (스칼라, float32)
 
-## 2. Stage 2 CNN Specification
+## 2. Stage 2: CNN(in Program) Specification
 
-본 Stage 2 CNN은 특징 추출기(Feature Extractor)와 분류기(Classifier)가 결합된 형태의 이진 분류 CNN 구조이다.
+Stage 2 모듈은 특징 추출기(Feature Extractor)와 분류기(Classifier)가 결합된 형태의 이진 분류 CNN 구조이다.
 
 ### 2.1 Architecture & Inference(Forward Propagation)
 
@@ -60,23 +60,25 @@
    - Activation Function: Sigmoid
    - Output: $y \in [0.0, 1.0]$ (특정 인물일 확률)
 
-## 3. Learning(Backpropagation)
+### 2.2 Learning
 
-### 3.1 오차 및 손실 함수 설정 (Loss Function & Error Metrics)
+Model training method: Backpropagation
+   - 출력값 $y \in [0.0, 1.0]$과 정답 레이블 $t \in \{0.0, 1.0\}$ 간의 차이를 계산하여 역전파(Backpropagation)를 통해 모델의 학습 최적화를 진행한다.
 
-본 Stage 2 CNN은 특정 인물의 존재 여부를 판단하는 이진 분류(Binary Classification) 문제이므로, 학습을 위한 손실 함수를 다음과 같이 설정한다.
+#### 2.2.1 Hyperparameter Setting
 
-1. **학습 손실 함수 (Primary Loss - Binary Cross Entropy, BCE)**:
-   - 출력값 $y \in [0.0, 1.0]$과 정답 레이블 $t \in \{0.0, 1.0\}$ 간의 차이를 계산하여 역전파(Backpropagation)의 최적화 목표로 사용한다.
+1. Loss function: Binary Cross Entropy(BCE)
+   - CNN 모델의 이진 분류 문제이므로 Binary Classification에 최적화 된 BCE를 선정하였다.
    - 출력층의 Sigmoid 활성화 함수와 결합할 때 발생하는 기울기 소실(Gradient Vanishing) 문제를 수학적으로 상쇄한다.
-   
-   $$
-   L_{BCE} = - \frac{1}{N} \sum_{i=1}^{N} [t_i \log(y_i) + (1-t_i) \log(1-y_i)]
-   $$
+   - 학습 과정에서 $L_{BCE}$ 의 값이 더 작을 수록 최소한 학습 데이터에서는 분류를 더 잘한다고 판단할 수 있다.
 
-   - **판단 기준**: 학습 과정에서 $L_{BCE} \approx 0$ 으로 수렴하면 학습이 원활하게 완료된 것으로 간주한다.
+2. Train Batch: 9
 
-### 3.2 Backpropagation & Output Layer Gradients
+3. Train Epoch: 50
+
+4. Learning Rate: 1e-3
+
+#### 2.2.2 Backpropagation & Output Layer Gradients
 
 출력층(Fully Connected Layer + Sigmoid) 단계에서 BCE 손실 함수를 최소화하기 위해 Chain Rule을 적용하여 그레디언트를 구하고 에러를 전파한다.
 
@@ -111,7 +113,7 @@
 4. **이전 레이어로의 오차 전파 (Chain Rule)**:
    - 출력층에서 계산된 오차 신호 $\delta^{\text{out}}$는 가중치 전치 행렬과의 곱을 통해 은닉층 및 합성곱층(Conv/Pooling)으로 계속해서 역전파된다.
 
-### 3.3 Fully Connected Hidden Layer 및 Flatten 단계 역전파
+#### 2.2.3 Fully Connected Hidden Layer 및 Flatten 단계 역전파
 
 출력층에서 계산된 오차 신호 $\delta^{\text{out}}$가 Fully Connected 은닉층(Hidden Layer)과 Flatten 단계를 거쳐 2D 특징 지도(Feature Map) 영역으로 전파되는 과정이다.
 
@@ -144,7 +146,7 @@
    \delta^{\text{pool2}} = \text{Reshape}(\mathbf{W}_{\text{fc}}^{\top} \delta^{\text{fc}}, (32, 28, 28))
    $$
 
-### 3.4 Max Pooling 2 단계 역전파
+#### 2.2.4 Max Pooling 2 단계 역전파
 
 Flatten 단계에서 3D 텐서로 복원된 오차 신호 $\delta^{\text{pool2}}$를 Max Pooling 2 레이어의 입력 영역(ReLU 2의 출력 맵)으로 역전파하는 과정이다.
 
@@ -159,7 +161,7 @@ Flatten 단계에서 3D 텐서로 복원된 오차 신호 $\delta^{\text{pool2}}
    \delta^{\text{relu2}} = \text{MaxUnpool}(\delta^{\text{pool2}}, \text{Mask}_{\text{pool2}})
    $$
 
-### 3.5 ReLU 2 및 Conv Layer 2 단계 역전파
+#### 2.2.5 ReLU 2 및 Conv Layer 2 단계 역전파
 
 Max Pooling 2를 거쳐 전달된 오차 신호 $\delta^{\text{relu2}}$를 바탕으로, ReLU 2 활성화 함수와 Conv Layer 2의 필터 가중치를 갱신하고 이전 레이어로 오차를 전파하는 과정이다.
 
@@ -200,7 +202,7 @@ Max Pooling 2를 거쳐 전달된 오차 신호 $\delta^{\text{relu2}}$를 바�
    
    (여기서 $*_{\text{full}}$은 경계면 오차 손실을 방지하기 위해 경계 패딩을 포함하여 확장 연산하는 Full Convolution을 의미한다.)
 
-### 3.6 Max Pooling 1, ReLU 1 및 Conv Layer 1 단계 역전파
+#### 2.2.6 Max Pooling 1, ReLU 1 및 Conv Layer 1 단계 역전파
 
 Conv Layer 2에서 전달받은 오차 신호 $\delta^{\text{pool1}}$을 받아, Feature Extractor의 최전단 레이어들(Max Pooling 1 $\rightarrow$ ReLU 1 $\rightarrow$ Conv Layer 1)에 대해 역전파를 수행하고 최초 필터 가중치 $\mathbf{K}_1$ 및 편향 $b_1$을 최종 갱신하는 과정이다.
 
@@ -240,11 +242,11 @@ Conv Layer 2에서 전달받은 오차 신호 $\delta^{\text{pool1}}$을 받아,
 4. **학습 파이프라인의 종결**:
    - $\mathbf{X}$는 외부 입력(웹캠 데이터)이므로 더 이상 이전 레이어로 오차를 전파하지 않고 1회 역전파(Backpropagation) 파이프라인을 종료한다.
 
-## 4. Initialization
+### 2.3 Initialization
 
-본 모델(Stage 2 CNN)의 학습 안정성과 초기 기울기 흐름을 최적화하기 위해, 각 레이어의 특성에 맞춘 가중치 및 편향 초기화 전략을 적용한다.
+각 레이어의 특성에 맞춘 가중치 및 편향 초기화 전략을 적용한다.
 
-### 4.1 Weights Initialization
+#### 2.3.1 Weights Initialization
 활성화 함수의 특성과 레이어 종류에 따라 분산이 소실되거나 폭발하지 않도록 적절한 초기화 기법을 이원화하여 적용한다.
 
 1. **합성곱 층 (Conv Layers: $\mathbf{K}_1, \mathbf{K}_2$)**:
@@ -255,26 +257,26 @@ Conv Layer 2에서 전달받은 오차 신호 $\delta^{\text{pool1}}$을 받아,
    - **적용 기법**: **Xavier (Glorot) Normal Initialization**
    - **선정 이유**: 은닉층과 출력층에 **Sigmoid** 활성화 함수를 사용하므로, 입출력의 분산을 일정하게 유지하여 초기 기울기 흐름을 안정화하는 Xavier 초기화를 적용한다. (기존 v0.5.x MLP 구조와의 호환성 유지)
 
-### 4.2 Bias Initialization
+#### 2.3.2 Bias Initialization
 
 1. **모든 레이어의 편향 ($b_1, b_2, b_{\text{fc}}, b_{\text{out}}$)**:
    - **적용 기법**: **Zero Initialization**
    - **선정 이유**: 초기 학습 단계에서 뉴런이 한쪽으로 치우치거나 활성화가 죽는 현상을 방지하기 위해 편향은 모두 $0$으로 설정한다.
 
-## 5. Stage 2 학습 데이터셋 전처리 및 증강 명세 (Dataset Preprocessing & Augmentation)
+### 2.4 Stage 2 학습 데이터셋 전처리 및 증강 명세 (Dataset Preprocessing & Augmentation)
 
-본 절은 오프라인 이미지 파일로부터 Stage 2 CNN 학습에 사용될 데이터셋을 구축, 정규화 및 증강하는 파이프라인을 정의한다.
+본 절은 오프라인 이미지 파일로부터 Stage 2 모듈의 학습에 사용될 데이터셋을 구축, 정규화 및 증강하는 파이프라인을 정의한다.
 
-### 5.1 디렉터리 구성 및 레이블 정의
-* `data/target/`: 타겟 인물 이미지 ($N_{\text{target}} = 30$, Target Label $t = 1.0$)
-* `data/non_target/`: 타인 및 비타겟 이미지 ($N_{\text{non\_target}} = 30$, Target Label $t = 0.0$)
+#### 2.4.1 디렉터리 구성 및 레이블 정의
+* `./data/target/`: 타겟 인물 이미지 ($N_{\text{target}} = 30$, Target Label $t = 1.0$)
+* `./data/non_target/`: 타인 및 비타겟 이미지 ($N_{\text{non\_target}} = 30$, Target Label $t = 0.0$)
 
-### 5.2 데이터 전처리 파이프라인
+#### 2.4.2 데이터 전처리 파이프라인
 1. **로드**: OpenCV `cv2.imread()`를 통해 BGR 3채널 원본 이미지 로드.
 2. **Stage 1 필터링**: `FaceDetector.detect_and_crop()`을 실행하여 유효한 얼굴 영역만 추출. (얼굴 미검출 시 해당 이미지는 제외)
 3. **규격화 및 텐서화**: $112 \times 112$ Bilinear Resize $\rightarrow$ RGB 변환 $\rightarrow$ $[0.0, 1.0]$ Float32 정규화 $\rightarrow$ ($3 \times 112 \times 112$) PyTorch 텐서 변환.
 
-### 5.3 데이터 증강 알고리즘 (Data Augmentation Strategy)
+#### 2.4.3 데이터 증강 알고리즘 (Data Augmentation Strategy)
 소규모 데이터셋($30 + 30 = 60$ 장)의 과적합을 방지하고 조명/각도 변화에 강건성을 확보하기 위해, 검출된 $112 \times 112$ 정규화 이미지 1장당 6개의 변형본(원형 포함)을 생성하여 **6배 확장($60 \times 6 = 360$ 장)**한다.
 
 1. **원본 (Original)**: 전처리 완료된 기본 텐서
@@ -296,5 +298,29 @@ Conv Layer 2에서 전달받은 오차 신호 $\delta^{\text{pool1}}$을 받아,
    $$
 6. **복합 증강 (Flip + Brightness)**: 수평 반전 상태에서 밝기 변화($\times 1.15$) 결합
 
-### 5.4 모델 가중치 저장 (Serialization)
-* 오프라인 배치 학습 완료 후 최적화된 파라미터를 PyTorch `state_dict` 규격인 `weights.pth`로 저장하여 실시간 파이프라인에서 호출할 수 있도록 한다.
+#### 2.4.4 모델 가중치 저장 (Serialization)
+* 오프라인 배치 학습 완료 후 최적화된 파라미터를 PyTorch `state_dict` 규격인 `weights.pth`로 저장하여 실시간 파이프라인에서 호출할 수 있도록 한다.(위치: './data/weights.pth')
+
+## 3. Indicator(지표)
+
+프로그램의 개선에 대한 근사적인 상태 확인과 단기적인 개발의 방향성을 설정하는데 도움이 되기 위해 필요한 지표들을 도입한다.
+
+### 3.1 Stage 2: CNN model parameter
+
+- 목적: 모델의 크기를 나타내는 지표로 모델의 크기를 파악할 수 있다.
+- 지표 산출: stage 2 모듈의 CNN 모델이 가지고 있는 가중치와 편향을 모두 포함한 개수를 계산한다.
+- 결과물: README.md의 프로그램 개요 부분에 표시
+
+### 3.2 Learning time taken per epoch
+
+- 목적: 1 epoch의 학습마다 얼마의 시간이 소요되는지를 확인하면서 현재 프로그램을 구동 중인 하드웨어를 통해 학습 시간이 오래 걸린다면 이를 줄이기 위해 최적화하는 방안 등의 단기 방향성을 세우는데 도움을 줄 수 있다.
+- 지표 산출: 하나의 파일 안에 다음을 표시한다.
+   1. 10 epoch당 소요된 시간(50 epoch 기준 총 5개 산출)
+   2. 총 학습 진행 과정에서 1 epoch당 소요된 평균 시간
+- 결과물: 생성 된 파일을 './data/log/'에 저장.
+
+### 3.3 Loss funtion graph
+
+- 목적: 학습 과정에서 학습 데이터 한정으로 지도학습이 최적화가 잘 되었는지 판단할 수 있는 기준이다.
+- 지표 산출: 1 epoch마다 산출 된 Loss function을 통해 x축은 epoch(횟수), y축은 Loss function으로 한 그래프를 생성한다.
+- 결과물: 생성한 그래프를 './data/log/'에 저장.
