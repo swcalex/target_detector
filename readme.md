@@ -22,9 +22,10 @@
 - **얼굴 미검출 처리**: 얼굴이 검출되지 않으면 Stage 2 연산을 생략하고 0.0% 로 처리
 - **경량 CNN**: 3→16→32 채널 구조의 소형 CNN으로 CPU 환경에서도 구동 가능
 - **데이터 증강**: 소규모 데이터셋(60장)을 6배 증강(360장)하여 과적합 방지
+- **수렴 기반 학습 종료**: 고정 epoch가 없으며, 50 epoch 블록을 반복 수행하고 블록 말미마다 수렴 판독(수렴 추세·진동 진폭 기준)으로 학습 종료를 판정. 총 1000 epoch 안전 상한 존재
 - **모델 파라미터 수**: **5,023,089개 (약 5.02M)**
   - Conv1: 448 / Conv2: 4,640 / FC1: 5,017,800 / FC2: 201
-- **지표 산출**: 학습 시 epoch당 소요 시간과 BCE 손실 곡선을 `data/log/`에 저장
+- **지표 산출**: 학습 시 epoch당 소요 시간, BCE 손실 곡선, 블록별 수렴 판독 기록을 `data/log/`에 저장
 
 ### 상세 명세
 
@@ -68,13 +69,14 @@ pip install -r requirements.txt
 python train_dataset.py
 ```
 
-학습이 완료되면 다음 산출물이 생성됩니다.
+학습은 50 epoch 블록으로 반복 수행되며, 블록 말미마다 수렴 판독을 수행합니다 (기준 1 수렴 추세 ∧ 기준 2 진동 진폭 동시 만족 시 학습 종료, 총 1000 epoch 안전 상한). 학습이 종료되면 다음 산출물이 생성됩니다.
 
-- `data/weights.pth` : 학습된 모델 가중치
-- `data/log/train_time_log.txt` : 10 epoch 블록별 소요 시간 및 epoch당 평균 시간
-- `data/log/loss_curve.png` : epoch별 BCE 손실 곡선
+- `data/weights.pth` : 학습 종료 시점의 모델 가중치
+- `data/log/train_time_log.txt` : 10 epoch 구간별 소요 시간, 총 소요 시간 및 epoch당 평균 시간
+- `data/log/loss_curve.png` : 전체 epoch의 BCE 손실 곡선
+- `data/log/convergence_report.txt` : 블록별 수렴 판독 레코드 및 학습 종료 요약
 
-학습 하이퍼파라미터(Batch=9, Epoch=50, LR=1e-3, SGD)는 `algorithm_spec.md` Section 2.2.1에 명시되어 있습니다.
+학습 하이퍼파라미터(Batch=9, 50 epoch 블록 반복 / 안전 상한 1000 epoch, LR=1e-3, SGD)는 `algorithm_spec.md` Section 2.2.1에 명시되어 있습니다.
 
 ### 2.4 실시간 추론
 

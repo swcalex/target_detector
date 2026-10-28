@@ -1,4 +1,4 @@
-# AI Collaboration Guidelines (26-10-07)
+# AI Collaboration Guidelines (26-10-20)
 
 본 문서는 Architect(User)와 Engine(AI)가 Develop 과정에서 전체적인 프로세스와 각 프로세스에서 각각의 역할 및 진행해야 할 작업들에 대한 규칙을 정의하는 문서이다. 따라서 본 문서 'ai_rule.md'의 내용은 프로젝트를 진행할 때 가장 기본이 되는 규칙이다. 이 문서의 수정은 개발 과정에서 일어나지 않으며, 별도의 작업으로 진행된다.
 
@@ -9,6 +9,7 @@ Architect와 Engine이 생각한 각각의 방향성을 서로 공유한다. 그
 ## step 2. 'algorithm_spec.md' 문서를 방향성에 맞게 생성 또는 수정.
 
 'algorithm_spec.md' 문서는 Architect 주도 하에 결정된 설계 내용을 작성하는 문서이다. 이 문서는 Architect가 사용하는 언어인 자연어, 수학으로 그 알고리즘 명세가 표현되어 있다. 논의된 방향성을 통해 'algorithm_spec.md' 문서를 생성 또는 수정한다. 먼저 Architect가 세부 수정사항을 제시한다면 이를 Engine이 문서에 반영하는 것으로 작업이 시작된다. 그 이후에는 Architect의 feedback - Engine의 반영 루프를 통해 algorithm_spec.md 문서가 다음 개발 단계로 넘어가도 되는지 Architect가 판단한다. Architect의 판단이 필요한 feedback마다 이 루프를 진행하고, 통과 시 다음 단계로 넘어간다.
+- Engine이 'algorithm_spec.md' 문서를 수정하려고 할 경우 Architect에게 변경 사항을 담은 diff를 보여주고 이를 Architect가 승인할 때에만 반영해야 한다.
 
 ## Step 3. 'programming_plan.md' 문서를 'algorithm_spec.md'의 설계 내용에 맞게 생성 또는 수정.
 
